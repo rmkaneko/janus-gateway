@@ -2873,7 +2873,7 @@ static void *janus_sip_handler(void *data) {
 				g_snprintf(error_cause, 512, "Missing session or Sofia stack");
 				goto error;
 			}
-			if(session->stack->s_nh_r != NULL) {
+			if(session != NULL && session->stack->s_nh_r != NULL) {
 				nua_handle_destroy(session->stack->s_nh_r);
 				session->stack->s_nh_r = NULL;
 			}
