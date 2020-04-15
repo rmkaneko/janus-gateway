@@ -181,7 +181,8 @@ static void janus_http_session_free(const janus_refcount *session_ref) {
 			json_decref(event);
 		g_async_queue_unref(session->events);
 	}
-	g_free(session);
+	if(session)
+		g_free(session);
 }
 
 
@@ -858,13 +859,16 @@ void janus_http_destroy(void) {
 	if(admin_sws)
 		MHD_stop_daemon(admin_sws);
 	admin_sws = NULL;
-	g_free((gpointer)cert_pem_bytes);
+	if(cert_pem_bytes)
+		g_free((gpointer)cert_pem_bytes);
 	cert_pem_bytes = NULL;
-	g_free((gpointer)cert_key_bytes);
+	if(cert_key_bytes)
+		g_free((gpointer)cert_key_bytes);
 	cert_key_bytes = NULL;
-	g_free(allow_origin);
+	if(allow_origin)
+		g_free(allow_origin);
 	allow_origin = NULL;
-
+	
 	janus_mutex_lock(&messages_mutex);
 	g_hash_table_destroy(messages);
 	messages = NULL;
@@ -1022,14 +1026,19 @@ void janus_http_session_created(janus_transport_session *transport, guint64 sess
 		return;
 	}
 	janus_http_session *session = g_malloc(sizeof(janus_http_session));
-	session->session_id = session_id;
-	session->events = g_async_queue_new();
-	session->longpolls = NULL;
-	janus_mutex_init(&session->mutex);
-	g_atomic_int_set(&session->destroyed, 0);
-	janus_refcount_init(&session->ref, janus_http_session_free);
-	g_hash_table_insert(sessions, janus_uint64_dup(session_id), session);
-	janus_mutex_unlock(&sessions_mutex);
+	if(session) {
+		session->session_id = session_id;
+		session->events = g_async_queue_new();
+		session->longpolls = NULL;
+		janus_mutex_init(&session->mutex);
+		g_atomic_int_set(&session->destroyed, 0);
+		janus_refcount_init(&session->ref, janus_http_session_free);
+		g_hash_table_insert(sessions, janus_uint64_dup(session_id), session);
+		janus_mutex_unlock(&sessions_mutex);
+	}
+	else {
+		JANUS_LOG(LOG_DBG, " janus_http_session_created - Could not allocate memory...\n");
+	}
 }
 
 void janus_http_session_over(janus_transport_session *transport, guint64 session_id, gboolean timeout, gboolean claimed) {
@@ -1051,15 +1060,20 @@ void janus_http_session_claimed(janus_transport_session *transport, guint64 sess
 		janus_refcount_increase(&old_session->ref);
 	janus_mutex_unlock(&sessions_mutex);
 	janus_http_session *session = g_malloc(sizeof(janus_http_session));
-	session->session_id = session_id;
-	session->events = g_async_queue_new();
-	session->longpolls = NULL;
-	janus_mutex_init(&session->mutex);
-	g_atomic_int_set(&session->destroyed, 0);
-	janus_refcount_init(&session->ref, janus_http_session_free);
-	janus_mutex_lock(&sessions_mutex);
-	g_hash_table_insert(sessions, janus_uint64_dup(session_id), session);
-	janus_mutex_unlock(&sessions_mutex);
+	if(session) {
+		session->session_id = session_id;
+		session->events = g_async_queue_new();
+		session->longpolls = NULL;
+		janus_mutex_init(&session->mutex);
+		g_atomic_int_set(&session->destroyed, 0);
+		janus_refcount_init(&session->ref, janus_http_session_free);
+		janus_mutex_lock(&sessions_mutex);
+		g_hash_table_insert(sessions, janus_uint64_dup(session_id), session);
+		janus_mutex_unlock(&sessions_mutex);
+	}
+	else {
+		JANUS_LOG(LOG_DBG, " janus_http_session_claimed - Could not allocate memory...\n");
+	}
 	if(old_session == NULL)
 		return;
 	/* Were there a long polls waiting? */
@@ -1154,15 +1168,20 @@ static int janus_http_handler(void *cls, struct MHD_Connection *connection,
 		JANUS_LOG(LOG_DBG, "Got a HTTP %s request on %s...\n", method, url);
 		JANUS_LOG(LOG_DBG, " ... Just parsing headers for now...\n");
 		msg = g_malloc0(sizeof(janus_http_msg));
-		msg->connection = connection;
-		janus_refcount_init(&msg->ref, janus_http_msg_free);
-		ts = janus_transport_session_create(msg, janus_http_msg_destroy);
-		janus_mutex_lock(&messages_mutex);
-		g_hash_table_insert(messages, ts, ts);
-		janus_mutex_unlock(&messages_mutex);
-		*ptr = ts;
-		MHD_get_connection_values(connection, MHD_HEADER_KIND, &janus_http_headers, msg);
-		ret = MHD_YES;
+		if(msg){
+			msg->connection = connection;
+			janus_refcount_init(&msg->ref, janus_http_msg_free);
+			ts = janus_transport_session_create(msg, janus_http_msg_destroy);
+			janus_mutex_lock(&messages_mutex);
+			g_hash_table_insert(messages, ts, ts);
+			janus_mutex_unlock(&messages_mutex);
+			*ptr = ts;
+			MHD_get_connection_values(connection, MHD_HEADER_KIND, &janus_http_headers, msg);
+			ret = MHD_YES;
+		}
+		else{
+			JANUS_LOG(LOG_DBG, " janus_http_handler - Could not allocate memory...\n");
+		}
 		/* Notify handlers about this new transport instance */
 		if(notify_events && gateway->events_is_enabled()) {
 			json_t *info = json_object();
@@ -1205,9 +1224,14 @@ static int janus_http_handler(void *cls, struct MHD_Connection *connection,
 		} else {
 			/* The base path is the web server too itself, we process the url itself */
 			basepath = g_malloc_n(3, sizeof(char *));
-			basepath[0] = g_strdup("/");
-			basepath[1] = g_strdup(url);
-			basepath[2] = NULL;
+			if(basepath) {
+				basepath[0] = g_strdup("/");
+				basepath[1] = g_strdup(url);
+				basepath[2] = NULL;
+			}
+			else {
+				JANUS_LOG(LOG_DBG, " janus_http_handler - Could not allocate memory...\n");
+			}
 		}
 		if(basepath[0] == NULL || basepath[1] == NULL || basepath[1][0] != '/') {
 			JANUS_LOG(LOG_ERR, "Invalid url %s\n", url);
@@ -1355,14 +1379,19 @@ static int janus_http_handler(void *cls, struct MHD_Connection *connection,
 		/* Ok, go on */
 		if(handle_path) {
 			char *location = g_malloc(strlen(ws_path) + strlen(session_path) + 2);
-			g_sprintf(location, "%s/%s", ws_path, session_path);
-			JANUS_LOG(LOG_ERR, "Invalid GET to %s, redirecting to %s\n", url, location);
-			response = MHD_create_response_from_buffer(0, NULL, MHD_RESPMEM_PERSISTENT);
-			MHD_add_response_header(response, "Location", location);
-			janus_http_add_cors_headers(msg, response);
-			ret = MHD_queue_response(connection, 302, response);
-			MHD_destroy_response(response);
-			g_free(location);
+			if(location) {
+				g_sprintf(location, "%s/%s", ws_path, session_path);
+				JANUS_LOG(LOG_ERR, "Invalid GET to %s, redirecting to %s\n", url, location);
+				response = MHD_create_response_from_buffer(0, NULL, MHD_RESPMEM_PERSISTENT);
+				MHD_add_response_header(response, "Location", location);
+				janus_http_add_cors_headers(msg, response);
+				ret = MHD_queue_response(connection, 302, response);
+				MHD_destroy_response(response);
+				g_free(location);
+			}
+			else {
+				JANUS_LOG(LOG_DBG, " janus_http_handler (handle_path) - Could not allocate memory...\n");
+			}
 			goto done;
 		}
 		janus_mutex_lock(&sessions_mutex);
@@ -1512,8 +1541,10 @@ done:
 	janus_refcount_decrease(&ts->ref);
 	g_strfreev(basepath);
 	g_strfreev(path);
-	g_free(session_path);
-	g_free(handle_path);
+	if(session_path)
+		g_free(session_path);
+	if(handle_path)
+		g_free(handle_path);
 	return ret;
 }
 
@@ -1540,15 +1571,20 @@ static int janus_http_admin_handler(void *cls, struct MHD_Connection *connection
 		JANUS_LOG(LOG_VERB, "Got an admin/monitor HTTP %s request on %s...\n", method, url);
 		JANUS_LOG(LOG_DBG, " ... Just parsing headers for now...\n");
 		msg = g_malloc0(sizeof(janus_http_msg));
-		msg->connection = connection;
-		janus_refcount_init(&msg->ref, janus_http_msg_free);
-		ts = janus_transport_session_create(msg, janus_http_msg_destroy);
-		janus_mutex_lock(&messages_mutex);
-		g_hash_table_insert(messages, ts, ts);
-		janus_mutex_unlock(&messages_mutex);
-		*ptr = ts;
-		MHD_get_connection_values(connection, MHD_HEADER_KIND, &janus_http_headers, msg);
-		ret = MHD_YES;
+		if(msg) {
+			msg->connection = connection;
+			janus_refcount_init(&msg->ref, janus_http_msg_free);
+			ts = janus_transport_session_create(msg, janus_http_msg_destroy);
+			janus_mutex_lock(&messages_mutex);
+			g_hash_table_insert(messages, ts, ts);
+			janus_mutex_unlock(&messages_mutex);
+			*ptr = ts;
+			MHD_get_connection_values(connection, MHD_HEADER_KIND, &janus_http_headers, msg);
+			ret = MHD_YES;
+		}
+		else {
+			JANUS_LOG(LOG_DBG, " janus_http_admin_handler - Could not allocate memory...\n");
+		}
 		/* Notify handlers about this new transport instance */
 		if(notify_events && gateway->events_is_enabled()) {
 			json_t *info = json_object();
@@ -1595,9 +1631,14 @@ static int janus_http_admin_handler(void *cls, struct MHD_Connection *connection
 		} else {
 			/* The base path is the web server too itself, we process the url itself */
 			basepath = g_malloc_n(3, sizeof(char *));
-			basepath[0] = g_strdup("/");
-			basepath[1] = g_strdup(url);
-			basepath[2] = NULL;
+			if(basepath) {
+				basepath[0] = g_strdup("/");
+				basepath[1] = g_strdup(url);
+				basepath[2] = NULL;
+			}
+			else {
+				JANUS_LOG(LOG_DBG, " janus_http_admin_handler (2) - Could not allocate memory...\n");
+			}
 		}
 		if(basepath[0] == NULL || basepath[1] == NULL || basepath[1][0] != '/') {
 			JANUS_LOG(LOG_ERR, "Invalid url %s\n", url);
@@ -1756,8 +1797,11 @@ done:
 	janus_refcount_decrease(&ts->ref);
 	g_strfreev(basepath);
 	g_strfreev(path);
-	g_free(session_path);
-	g_free(handle_path);
+	if(session_path)
+		g_free(session_path);
+
+	if(handle_path)
+		g_free(handle_path);
 	return ret;
 }
 
@@ -1899,13 +1943,14 @@ static int janus_http_notifier(janus_http_msg *msg) {
 /* Helper to quickly send a success response */
 static int janus_http_return_success(janus_transport_session *ts, char *payload) {
 	if(!ts) {
-		g_free(payload);
+		if(payload)
+			g_free(payload);
 		return MHD_NO;
 	}
 	janus_http_msg *msg = (janus_http_msg *)ts->transport_p;
 	if(!msg || !msg->connection) {
 		if(payload)
-			free(payload);
+			g_free(payload);
 		return MHD_NO;
 	}
 	janus_refcount_increase(&msg->ref);
@@ -1991,7 +2036,8 @@ static gboolean janus_http_timeout(gpointer user_data) {
 		janus_refcount_decrease(&session->ref);
 	} else {
 		/* Not a long poll, a request is taking way too much time */
-		g_free(request->response);
+		if(request->response)
+			g_free(request->response);
 		request->response = NULL;
 		request->resplen = 0;
 		MHD_resume_connection(request->connection);
