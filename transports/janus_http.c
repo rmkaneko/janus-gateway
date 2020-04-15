@@ -1283,13 +1283,18 @@ static int janus_http_handler(void *cls, struct MHD_Connection *connection,
 		JANUS_LOG(LOG_HUGE, "Processing POST data (%s) (%zu bytes)...\n", msg->contenttype, *upload_data_size);
 		if(*upload_data_size != 0) {
 			msg->payload = g_realloc(msg->payload, msg->len+*upload_data_size+1);
-			memcpy(msg->payload+msg->len, upload_data, *upload_data_size);
-			msg->len += *upload_data_size;
-			memset(msg->payload + msg->len, '\0', 1);
-			JANUS_LOG(LOG_DBG, "  -- Data we have now (%zu bytes)\n", msg->len);
-			*upload_data_size = 0;	/* Go on */
-			ret = MHD_YES;
-			goto done;
+			if(msg->payload) {
+				memcpy(msg->payload+msg->len, upload_data, *upload_data_size);
+				msg->len += *upload_data_size;
+				memset(msg->payload + msg->len, '\0', 1);
+				JANUS_LOG(LOG_DBG, "  -- Data we have now (%zu bytes)\n", msg->len);
+				*upload_data_size = 0;	/* Go on */
+				ret = MHD_YES;
+				goto done;
+			}
+			else {
+				JANUS_LOG(LOG_DBG, " janus_http_handler - Could not reallocate memory...\n");
+			}
 		}
 		JANUS_LOG(LOG_DBG, "Done getting payload, we can answer\n");
 		if(msg->payload == NULL) {
@@ -1690,13 +1695,18 @@ static int janus_http_admin_handler(void *cls, struct MHD_Connection *connection
 		JANUS_LOG(LOG_HUGE, "Processing POST data (%s) (%zu bytes)...\n", msg->contenttype, *upload_data_size);
 		if(*upload_data_size != 0) {
 			msg->payload = g_realloc(msg->payload, msg->len+*upload_data_size+1);
-			memcpy(msg->payload+msg->len, upload_data, *upload_data_size);
-			msg->len += *upload_data_size;
-			memset(msg->payload + msg->len, '\0', 1);
-			JANUS_LOG(LOG_DBG, "  -- Data we have now (%zu bytes)\n", msg->len);
-			*upload_data_size = 0;	/* Go on */
-			ret = MHD_YES;
-			goto done;
+			if(msg->payload) {
+				memcpy(msg->payload+msg->len, upload_data, *upload_data_size);
+				msg->len += *upload_data_size;
+				memset(msg->payload + msg->len, '\0', 1);
+				JANUS_LOG(LOG_DBG, "  -- Data we have now (%zu bytes)\n", msg->len);
+				*upload_data_size = 0;	/* Go on */
+				ret = MHD_YES;
+				goto done;
+			}
+			else {
+				JANUS_LOG(LOG_DBG, " janus_http_handler - Could not reallocate memory...\n");
+			}	
 		}
 		JANUS_LOG(LOG_DBG, "Done getting payload, we can answer\n");
 		if(msg->payload == NULL) {
