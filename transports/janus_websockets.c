@@ -592,7 +592,8 @@ int janus_websockets_init(janus_transport_callbacks *callback, const char *confi
 			} else {
 				JANUS_LOG(LOG_INFO, "WebSockets server started (port %d)...\n", wsport);
 			}
-			g_free(ip);
+			if(ip)
+				g_free(ip);
 		}
 		item = janus_config_get(config, config_general, janus_config_type_item, "wss");
 		if(!item || !item->value || !janus_is_true(item->value)) {
@@ -657,7 +658,8 @@ int janus_websockets_init(janus_transport_callbacks *callback, const char *confi
 					JANUS_LOG(LOG_INFO, "Secure WebSockets server started (port %d)...\n", wsport);
 				}
 			}
-			g_free(ip);
+			if(ip)
+				g_free(ip);
 		}
 		/* Do the same for the Admin API, if enabled */
 		item = janus_config_get(config, config_admin, janus_config_type_item, "admin_ws");
@@ -704,7 +706,8 @@ int janus_websockets_init(janus_transport_callbacks *callback, const char *confi
 			} else {
 				JANUS_LOG(LOG_INFO, "Admin WebSockets server started (port %d)...\n", wsport);
 			}
-			g_free(ip);
+			if(ip)
+				g_free(ip);
 		}
 		item = janus_config_get(config, config_admin, janus_config_type_item, "admin_wss");
 		if(!item || !item->value || !janus_is_true(item->value)) {
@@ -769,7 +772,8 @@ int janus_websockets_init(janus_transport_callbacks *callback, const char *confi
 					JANUS_LOG(LOG_INFO, "Secure Admin WebSockets server started (port %d)...\n", wsport);
 				}
 			}
-			g_free(ip);
+			if(ip)
+				g_free(ip);
 		}
 	}
 	janus_config_destroy(config);
@@ -873,9 +877,11 @@ static void janus_websockets_destroy_client(
 		g_async_queue_unref(ws_client->messages);
 	}
 	/* ... and the shared buffers */
-	g_free(ws_client->incoming);
+	if(ws_client->incoming)
+		g_free(ws_client->incoming);
 	ws_client->incoming = NULL;
-	g_free(ws_client->buffer);
+	if(ws_client->buffer)
+		g_free(ws_client->buffer);
 	ws_client->buffer = NULL;
 	ws_client->buflen = 0;
 	ws_client->bufpending = 0;
@@ -1102,15 +1108,25 @@ static int janus_websockets_common_callback(
 			if(ws_client->incoming == NULL) {
 				JANUS_LOG(LOG_HUGE, "[%s-%p] First fragment: %zu bytes, %zu remaining\n", log_prefix, wsi, len, remaining);
 				ws_client->incoming = g_malloc(len+1);
-				memcpy(ws_client->incoming, in, len);
-				ws_client->incoming[len] = '\0';
+				if(ws_client->incoming){
+					memcpy(ws_client->incoming, in, len);
+					ws_client->incoming[len] = '\0';
+				}
+				else {
+					JANUS_LOG(LOG_HUGE, "Fail alloc mem ws_client->incoming\n");
+				}
 				JANUS_LOG(LOG_HUGE, "%s\n", ws_client->incoming);
 			} else {
 				size_t offset = strlen(ws_client->incoming);
 				JANUS_LOG(LOG_HUGE, "[%s-%p] Appending fragment: offset %zu, %zu bytes, %zu remaining\n", log_prefix, wsi, offset, len, remaining);
 				ws_client->incoming = g_realloc(ws_client->incoming, offset+len+1);
-				memcpy(ws_client->incoming+offset, in, len);
-				ws_client->incoming[offset+len] = '\0';
+				if(ws_client->incoming) {
+					memcpy(ws_client->incoming+offset, in, len);
+					ws_client->incoming[offset+len] = '\0';
+				}
+				else {
+					JANUS_LOG(LOG_HUGE, "Fail realloc mem ws_client->incoming\n");
+				}
 				JANUS_LOG(LOG_HUGE, "%s\n", ws_client->incoming+offset);
 			}
 			if(remaining > 0 || !lws_is_final_fragment(wsi)) {
@@ -1122,7 +1138,8 @@ static int janus_websockets_common_callback(
 			/* If we got here, the message is complete: parse the JSON payload */
 			json_error_t error;
 			json_t *root = json_loads(ws_client->incoming, 0, &error);
-			g_free(ws_client->incoming);
+			if(ws_client->incoming)
+				g_free(ws_client->incoming);
 			ws_client->incoming = NULL;
 			/* Notify the core, passing both the object and, since it may be needed, the error */
 			gateway->incoming_request(&janus_websockets_transport, ws_client->ts, NULL, admin, root, &error);
@@ -1185,10 +1202,17 @@ static int janus_websockets_common_callback(
 						JANUS_LOG(LOG_HUGE, "[%s-%p] Re-allocating to %d bytes (was %d, response is %zu bytes)\n", log_prefix, wsi, buflen, ws_client->buflen, strlen(response));
 						ws_client->buflen = buflen;
 						ws_client->buffer = g_realloc(ws_client->buffer, buflen);
+						if(!ws_client->buffer)
+							JANUS_LOG(LOG_HUGE, "Fail realloc mem buffer\n");
 					}
-					memcpy(ws_client->buffer + LWS_SEND_BUFFER_PRE_PADDING, response, strlen(response));
-					JANUS_LOG(LOG_HUGE, "[%s-%p] Sending WebSocket message (%zu bytes)...\n", log_prefix, wsi, strlen(response));
-					int sent = lws_write(wsi, ws_client->buffer + LWS_SEND_BUFFER_PRE_PADDING, strlen(response), LWS_WRITE_TEXT);
+					if(ws_client->buffer) {
+						memcpy(ws_client->buffer + LWS_SEND_BUFFER_PRE_PADDING, response, strlen(response));
+						JANUS_LOG(LOG_HUGE, "[%s-%p] Sending WebSocket message (%zu bytes)...\n", log_prefix, wsi, strlen(response));
+						int sent = lws_write(wsi, ws_client->buffer + LWS_SEND_BUFFER_PRE_PADDING, strlen(response), LWS_WRITE_TEXT);
+					}
+					else {
+						JANUS_LOG(LOG_HUGE, "Fail point buffer \n");
+					}
 					JANUS_LOG(LOG_HUGE, "[%s-%p]   -- Sent %d/%zu bytes\n", log_prefix, wsi, sent, strlen(response));
 					if(sent > -1 && sent < (int)strlen(response)) {
 						/* We couldn't send everything in a single write, we'll complete this in the next round */
@@ -1198,7 +1222,7 @@ static int janus_websockets_common_callback(
 							log_prefix, wsi, ws_client->bufpending, ws_client->bufoffset);
 					}
 					/* We can get rid of the message */
-					free(response);
+					g_free(response);
 					/* Done for this round, check the next response/notification later */
 					lws_callback_on_writable(wsi);
 					janus_mutex_unlock(&ws_client->ts->mutex);
