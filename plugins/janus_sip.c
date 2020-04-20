@@ -5132,7 +5132,6 @@ void janus_sip_sofia_callback(nua_event_t event, int status, char const *phrase,
 					session->media.ready = FALSE;
 					janus_refcount_decrease(&session->ref);
 					JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the RTP/RTCP thread...\n", error->code, error->message ? error->message : "??");
-					goto error:
 				}
 			}
 			/* Check if there's an isfocus feature parameter in the Contact header */
