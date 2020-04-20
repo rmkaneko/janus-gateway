@@ -1010,6 +1010,9 @@ static void janus_sip_session_destroy(janus_sip_session *session) {
 }
 
 static void janus_sip_session_free(const janus_refcount *session_ref) {
+	if(!session_ref)
+		return;
+	
 	janus_sip_session *session = janus_refcount_containerof(session_ref, janus_sip_session, ref);
 	/* Remove the reference to the core plugin session */
 	janus_refcount_decrease(&session->handle->ref);
@@ -1105,23 +1108,30 @@ static void janus_sip_message_free(janus_sip_message *msg) {
 	}
 	msg->handle = NULL;
 
-	g_free(msg->transaction);
-	msg->transaction = NULL;
-	if(msg->message)
+	if(msg->transaction){
+		g_free(msg->transaction);
+		msg->transaction = NULL;
+	}
+	if(msg->message){
 		json_decref(msg->message);
-	msg->message = NULL;
-	if(msg->jsep)
+		msg->message = NULL;
+	}
+	if(msg->jsep){
 		json_decref(msg->jsep);
-	msg->jsep = NULL;
+		msg->jsep = NULL;
+	}
 
-	g_free(msg);
+	if(msg)
+		g_free(msg);
 }
 
 static void janus_sip_transfer_destroy(janus_sip_transfer *t) {
 	if(t == NULL)
 		return;
-	g_free(t->referred_by);
-	g_free(t->custom_headers);
+	if(t->referred_by)
+		g_free(t->referred_by);
+	if(t->custom_headers)
+		g_free(t->custom_headers);
 	if(t->session != NULL)
 		janus_refcount_decrease(&t->session->ref);
 	g_free(t);
@@ -1164,9 +1174,15 @@ static int janus_sip_srtp_set_local(janus_sip_session *session, gboolean video, 
 		session->account.username, master_length, key_length, salt_length);
 	/* Generate key/salt */
 	uint8_t *key = g_malloc0(master_length);
+	if(!key)
+		return -2;
+	
 	srtp_crypto_get_random(key, master_length);
 	/* Set SRTP policies */
 	srtp_policy_t *policy = video ? &session->media.video_local_policy : &session->media.audio_local_policy;
+	if(!policy)
+		return -2;
+	
 	switch(session->media.srtp_profile) {
 		case JANUS_SRTP_AES128_CM_SHA1_32:
 			srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32(&(policy->rtp));
@@ -1199,10 +1215,14 @@ static int janus_sip_srtp_set_local(janus_sip_session *session, gboolean video, 
 	if(res != srtp_err_status_ok) {
 		/* Something went wrong... */
 		JANUS_LOG(LOG_ERR, "Oops, error creating outbound SRTP session: %d (%s)\n", res, janus_srtp_error_str(res));
-		g_free(*profile);
-		*profile = NULL;
-		g_free(key);
-		policy->key = NULL;
+		if(profile){
+			g_free(*profile);
+			*profile = NULL;
+		}
+		if(key){
+			g_free(key);
+			policy->key = NULL;
+		}
 		return -2;
 	}
 	/* Base64 encode the salt */
@@ -1251,7 +1271,8 @@ static int janus_sip_srtp_set_remote(janus_sip_session *session, gboolean video,
 	guchar *decoded = g_base64_decode(crypto, &len);
 	if(len < master_length) {
 		/* FIXME Can this happen? */
-		g_free(decoded);
+		if(decoded)
+			g_free(decoded);
 		return -3;
 	}
 	/* Set SRTP policies */
@@ -1288,7 +1309,8 @@ static int janus_sip_srtp_set_remote(janus_sip_session *session, gboolean video,
 	if(res != srtp_err_status_ok) {
 		/* Something went wrong... */
 		JANUS_LOG(LOG_ERR, "Oops, error creating inbound SRTP session: %d (%s)\n", res, janus_srtp_error_str(res));
-		g_free(decoded);
+		if(decoded)
+			g_free(decoded);
 		policy->key = NULL;
 		return -2;
 	}
@@ -1310,33 +1332,41 @@ static void janus_sip_srtp_cleanup(janus_sip_session *session) {
 	if(session->media.audio_srtp_out)
 		srtp_dealloc(session->media.audio_srtp_out);
 	session->media.audio_srtp_out = NULL;
-	g_free(session->media.audio_local_policy.key);
+	if(session->media.audio_local_policy.key)
+		g_free(session->media.audio_local_policy.key);
 	session->media.audio_local_policy.key = NULL;
 	if(session->media.audio_srtp_in)
 		srtp_dealloc(session->media.audio_srtp_in);
 	session->media.audio_srtp_in = NULL;
-	g_free(session->media.audio_remote_policy.key);
+	if(session->media.audio_remote_policy.key)
+		g_free(session->media.audio_remote_policy.key);
 	session->media.audio_remote_policy.key = NULL;
 	/* Video */
 	if(session->media.video_srtp_out)
 		srtp_dealloc(session->media.video_srtp_out);
 	session->media.video_srtp_out = NULL;
-	g_free(session->media.video_local_policy.key);
+	if(session->media.video_local_policy.key)
+		g_free(session->media.video_local_policy.key);
 	session->media.video_local_policy.key = NULL;
 	if(session->media.video_srtp_in)
 		srtp_dealloc(session->media.video_srtp_in);
 	session->media.video_srtp_in = NULL;
-	g_free(session->media.video_remote_policy.key);
+	if(session->media.video_remote_policy.key)
+		g_free(session->media.video_remote_policy.key);
 	session->media.video_remote_policy.key = NULL;
 }
 
 static void janus_sip_media_reset(janus_sip_session *session) {
 	if(session == NULL)
 		return;
-	g_free(session->media.remote_audio_ip);
-	session->media.remote_audio_ip = NULL;
-	g_free(session->media.remote_video_ip);
-	session->media.remote_video_ip = NULL;
+	if(session->media.remote_audio_ip){
+		g_free(session->media.remote_audio_ip);
+		session->media.remote_audio_ip = NULL;
+	}
+	if(session->media.remote_video_ip){
+		g_free(session->media.remote_video_ip);
+		session->media.remote_video_ip = NULL;
+	}
 	session->media.earlymedia = FALSE;
 	session->media.update = FALSE;
 	session->media.updated = FALSE;
@@ -1884,6 +1914,12 @@ void janus_sip_create_session(janus_plugin_session *handle, int *error) {
 		return;
 	}
 	janus_sip_session *session = g_malloc0(sizeof(janus_sip_session));
+	if(!session){
+		*error = -1;
+		JANUS_LOG(LOG_ERR, "No created session - not have memory...\n");
+
+		return;
+	}
 	session->handle = handle;
 	session->account.identity = NULL;
 	session->account.force_udp = FALSE;
@@ -2119,6 +2155,10 @@ struct janus_plugin_result *janus_sip_handle_message(janus_plugin_session *handl
 	janus_mutex_unlock(&sessions_mutex);
 
 	janus_sip_message *msg = g_malloc(sizeof(janus_sip_message));
+	if(!msg){
+		JANUS_LOG(LOG_ERR, "No have memory to alloc...\n");
+		return janus_plugin_result_new(JANUS_PLUGIN_ERROR, "No session associated with this handle - no have memory to alloc", NULL);
+	}
 	msg->handle = handle;
 	msg->transaction = transaction;
 	msg->message = message;
@@ -2569,6 +2609,12 @@ static void *janus_sip_handler(void *data) {
 				session->account.username = ms->account.username ? g_strdup(ms->account.username) : NULL;
 				if(session->stack == NULL) {
 					session->stack = g_malloc0(sizeof(ssip_t));
+					if(!session->stack){
+						JANUS_LOG(LOG_ERR, "No have memory to alloc...\n");
+						error_code = JANUS_SIP_ERROR_HELPER_ERROR;
+						g_snprintf(error_cause, 512, "No have memory to alloc - ssip_t");
+						goto error;
+					}					
 					su_home_init(session->stack->s_home);
 				}
 				session->stack->session = session;
@@ -2850,7 +2896,6 @@ static void *janus_sip_handler(void *data) {
 					JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the SIP Sofia thread...\n", error->code, error->message ? error->message : "??");
 					error_code = JANUS_SIP_ERROR_UNKNOWN_ERROR;
 					g_snprintf(error_cause, 512, "Got error %d (%s) trying to launch the SIP Sofia thread", error->code, error->message ? error->message : "??");
-					goto error;
 				}
 				long int timeout = 0;
 				while(session->stack == NULL || session->stack->s_nua == NULL) {
@@ -3271,6 +3316,11 @@ static void *janus_sip_handler(void *data) {
 			} else {
 				/* If call-id does not exist in request, create a random one */
 				callid = g_malloc0(24);
+				if(!callid){
+					error_code = JANUS_SIP_ERROR_LIBSOFIA_ERROR;
+					g_snprintf(error_cause, 512, "No have memory to alloc - callid");
+					goto error;
+				}
 				janus_sip_random_string(24, callid);
 			}
 			/* Also notify event handlers */
@@ -4672,13 +4722,19 @@ void janus_sip_sofia_callback(nua_event_t event, int status, char const *phrase,
 					continue;
 				}
 				janus_sip_transfer *t = g_malloc(sizeof(janus_sip_transfer));
-				janus_refcount_increase(&session->ref);
-				t->session = session;
-				t->referred_by = referred_by ? g_strdup(referred_by) : NULL;
-				t->custom_headers = custom_headers ? g_strdup(custom_headers) : NULL;
-				t->nh_s = nh;
-				nua_save_event(nua, t->saved);
-				g_hash_table_insert(transfers, GUINT_TO_POINTER(refer_id), t);
+				if(!t){
+					JANUS_LOG(LOG_ERR, "Missing Refer-To header - no have memory to alloc\n");
+					break;
+				}
+				else{
+					janus_refcount_increase(&session->ref);
+					t->session = session;
+					t->referred_by = referred_by ? g_strdup(referred_by) : NULL;
+					t->custom_headers = custom_headers ? g_strdup(custom_headers) : NULL;
+					t->nh_s = nh;
+					nua_save_event(nua, t->saved);
+					g_hash_table_insert(transfers, GUINT_TO_POINTER(refer_id), t);
+				}
 			}
 			janus_mutex_unlock(&sessions_mutex);
 			/* Notify the application */
@@ -5076,6 +5132,7 @@ void janus_sip_sofia_callback(nua_event_t event, int status, char const *phrase,
 					session->media.ready = FALSE;
 					janus_refcount_decrease(&session->ref);
 					JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the RTP/RTCP thread...\n", error->code, error->message ? error->message : "??");
+					goto error:
 				}
 			}
 			/* Check if there's an isfocus feature parameter in the Contact header */
@@ -6240,6 +6297,10 @@ gpointer janus_sip_sofia_thread(gpointer user_data) {
 	}
 	JANUS_LOG(LOG_VERB, "Joining sofia loop thread (%s)...\n", session->account.username);
 	session->stack = g_malloc0(sizeof(ssip_t));
+	if(!session->stack){
+		JANUS_LOG(LOG_ERR, "Joining sofia loop thread - No have memory to alloc\n");
+		return NULL;
+	}
 	su_home_init(session->stack->s_home);
 	session->stack->session = session;
 	session->stack->s_nua = NULL;
