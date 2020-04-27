@@ -679,6 +679,10 @@ janus_session *janus_session_create(guint64 session_id) {
 		}
 	}
 	session = (janus_session *)g_malloc(sizeof(janus_session));
+	if(!session){
+		JANUS_LOG(LOG_ERR, "janus_session - Don't have memory to alloc! ...\n");
+		return 0;
+	}
 	JANUS_LOG(LOG_INFO, "Creating new session: %"SCNu64"; %p\n", session_id, session);
 	session->session_id = session_id;
 	janus_refcount_init(&session->ref, janus_session_free);
@@ -823,6 +827,10 @@ static void janus_request_free(const janus_refcount *request_ref) {
 
 janus_request *janus_request_new(janus_transport *transport, janus_transport_session *instance, void *request_id, gboolean admin, json_t *message) {
 	janus_request *request = g_malloc(sizeof(janus_request));
+	if(!request){
+		JANUS_LOG(LOG_ERR, "janus_request - Don't have memory to alloc! ...\n");
+		return 0;
+	}
 	request->transport = transport;
 	request->instance = instance;
 	janus_refcount_increase(&instance->ref);
@@ -3416,7 +3424,12 @@ json_t *janus_plugin_handle_sdp(janus_plugin_session *plugin_session, janus_plug
 						stream->audio_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
 						if(stream->audio_rtcp_ctx == NULL) {
 							stream->audio_rtcp_ctx = g_malloc0(sizeof(rtcp_context));
-							stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
+							if(stream->audio_rtcp_ctx){
+								stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
+							}
+							else{
+								JANUS_LOG(LOG_ERR, "janus_plugin_handle_sdp audio - Don't have memory to alloc! ...\n");
+							}
 						}
 					}
 					if(ice_handle->audio_mid == NULL)
@@ -3428,7 +3441,12 @@ json_t *janus_plugin_handle_sdp(janus_plugin_session *plugin_session, janus_plug
 						stream->video_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
 						if(stream->video_rtcp_ctx[0] == NULL) {
 							stream->video_rtcp_ctx[0] = g_malloc0(sizeof(rtcp_context));
-							stream->video_rtcp_ctx[0]->tb = 90000;	/* May change later */
+							if(stream->video_rtcp_ctx[0]){
+								stream->video_rtcp_ctx[0]->tb = 90000;	/* May change later */
+							}
+							else{
+								JANUS_LOG(LOG_ERR, "janus_plugin_handle_sdp video - Don't have memory to alloc! ...\n");
+							}
 						}
 					}
 					if(ice_handle->video_mid == NULL)
