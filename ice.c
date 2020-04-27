@@ -152,14 +152,21 @@ void janus_ice_set_static_event_loops(int loops) {
 	int i = 0;
 	for(i=0; i<loops; i++) {
 		janus_ice_static_event_loop *loop = g_malloc0(sizeof(janus_ice_static_event_loop));
-		loop->id = static_event_loops;
-		loop->mainctx = g_main_context_new();
-		loop->mainloop = g_main_loop_new(loop->mainctx, FALSE);
-		/* Now spawn a thread for this loop */
 		GError *error = NULL;
-		char tname[16];
-		g_snprintf(tname, sizeof(tname), "hloop %d", loop->id);
-		loop->thread = g_thread_try_new(tname, &janus_ice_static_event_loop_thread, loop, &error);
+		if(loop){
+			loop->id = static_event_loops;
+			loop->mainctx = g_main_context_new();
+			loop->mainloop = g_main_loop_new(loop->mainctx, FALSE);
+			/* Now spawn a thread for this loop */
+
+			char tname[16];
+			g_snprintf(tname, sizeof(tname), "hloop %d", loop->id);
+			loop->thread = g_thread_try_new(tname, &janus_ice_static_event_loop_thread, loop, &error);
+		}
+		else{
+			error = -1;
+			JANUS_LOG(LOG_ERR, "Don't have memory to alloc! ...\n");
+		}
 		if(error != NULL) {
 			g_main_loop_unref(loop->mainloop);
 			g_main_context_unref(loop->mainctx);
@@ -738,10 +745,15 @@ janus_ice_trickle *janus_ice_trickle_new(const char *transaction, json_t *candid
 	if(transaction == NULL || candidate == NULL)
 		return NULL;
 	janus_ice_trickle *trickle = g_malloc(sizeof(janus_ice_trickle));
-	trickle->handle = NULL;
-	trickle->received = janus_get_monotonic_time();
-	trickle->transaction = g_strdup(transaction);
-	trickle->candidate = json_deep_copy(candidate);
+	if(trickle){
+		trickle->handle = NULL;
+		trickle->received = janus_get_monotonic_time();
+		trickle->transaction = g_strdup(transaction);
+		trickle->candidate = json_deep_copy(candidate);
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "janus_ice_trickle - Don't have memory to alloc! ...\n");
+	}
 	return trickle;
 }
 
@@ -1182,6 +1194,10 @@ janus_ice_handle *janus_ice_handle_create(void *core_session, const char *opaque
 	}
 	handle = (janus_ice_handle *)g_malloc0(sizeof(janus_ice_handle));
 	JANUS_LOG(LOG_INFO, "Creating new handle in session %"SCNu64": %"SCNu64"; %p %p\n", session->session_id, handle_id, core_session, handle);
+	if(!handle){
+		JANUS_LOG(LOG_ERR, "janus_ice_handle - Don't have memory to alloc! ...\n");
+		return 0;
+	}
 	janus_refcount_init(&handle->ref, janus_ice_handle_free);
 	janus_refcount_increase(&session->ref);
 	handle->session = core_session;
@@ -1212,6 +1228,10 @@ gint janus_ice_handle_attach_plugin(void *core_session, janus_ice_handle *handle
 	}
 	int error = 0;
 	janus_plugin_session *session_handle = g_malloc(sizeof(janus_plugin_session));
+	if(!session_handle){
+		JANUS_LOG(LOG_ERR, "janus_ice_handle_attach_plugin - Don't have memory to alloc! ...\n");
+		return -1;
+	}
 	session_handle->gateway_handle = handle;
 	session_handle->plugin_handle = NULL;
 	g_atomic_int_set(&session_handle->stopped, 0);
@@ -2446,9 +2466,14 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 						guint32 transport_ext_seq_num = stream->transport_wide_cc_cycles<<16 | transport_seq_num;
 						/* Store last received transport seq num */
 						stream->transport_wide_cc_last_seq_num = transport_seq_num;
-						/* Set stats values */
-						stats->transport_seq_num = transport_ext_seq_num;
-						stats->timestamp = (((guint64)now.tv_sec)*1E6+now.tv_usec);
+						if(stats){
+							/* Set stats values */
+							stats->transport_seq_num = transport_ext_seq_num;
+							stats->timestamp = (((guint64)now.tv_sec)*1E6+now.tv_usec);
+						}
+						else{
+							JANUS_LOG(LOG_ERR, "janus_ice_cb_nice_recv - Don't have memory to alloc! ...\n");
+						}
 						/* Lock and append to received list */
 						janus_mutex_lock(&stream->mutex);
 						stream->transport_wide_received_seq_nums = g_slist_prepend(stream->transport_wide_received_seq_nums, stats);
@@ -2660,11 +2685,17 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 					while(cur_seqn != new_seqn) {
 						cur_seqn += (guint16)1; /* can wrap */
 						janus_seq_info *seq_obj = g_malloc0(sizeof(janus_seq_info));
-						seq_obj->seq = cur_seqn;
-						seq_obj->ts = now;
-						seq_obj->state = (cur_seqn == new_seqn) ? SEQ_RECVED : SEQ_MISSING;
-						janus_seq_append(last_seqs, seq_obj);
-						last_seqs_len++;
+						if(seq_obj){
+							seq_obj->seq = cur_seqn;
+							seq_obj->ts = now;
+							seq_obj->state = (cur_seqn == new_seqn) ? SEQ_RECVED : SEQ_MISSING;
+							janus_seq_append(last_seqs, seq_obj);
+							last_seqs_len++;
+						}
+						else{
+							JANUS_LOG(LOG_ERR, "seq_obj - Don't have memory to alloc! ...\n");
+							break;
+						}
 					}
 				}
 				if(cur_seq) {
@@ -2689,16 +2720,21 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 								g_hash_table_insert(stream->rtx_nacked[vindex], GUINT_TO_POINTER(cur_seq->seq), GINT_TO_POINTER(1));
 								/* We don't track it forever, though: add a timed source to remove it in a few seconds */
 								janus_ice_nacked_packet *np = g_malloc(sizeof(janus_ice_nacked_packet));
-								np->handle = handle;
-								np->seq_number = cur_seq->seq;
-								np->vindex = vindex;
-								if(stream->pending_nacked_cleanup == NULL)
-									stream->pending_nacked_cleanup = g_hash_table_new(NULL, NULL);
-								GSource *timeout_source = g_timeout_source_new_seconds(5);
-								g_source_set_callback(timeout_source, janus_ice_nacked_packet_cleanup, np, (GDestroyNotify)g_free);
-								np->source_id = g_source_attach(timeout_source, handle->mainctx);
-								g_hash_table_insert(stream->pending_nacked_cleanup, GUINT_TO_POINTER(np->source_id), timeout_source);
-								g_source_unref(timeout_source);
+								if(np){
+									np->handle = handle;
+									np->seq_number = cur_seq->seq;
+									np->vindex = vindex;
+									if(stream->pending_nacked_cleanup == NULL)
+										stream->pending_nacked_cleanup = g_hash_table_new(NULL, NULL);
+									GSource *timeout_source = g_timeout_source_new_seconds(5);
+									g_source_set_callback(timeout_source, janus_ice_nacked_packet_cleanup, np, (GDestroyNotify)g_free);
+									np->source_id = g_source_attach(timeout_source, handle->mainctx);
+									g_hash_table_insert(stream->pending_nacked_cleanup, GUINT_TO_POINTER(np->source_id), timeout_source);
+									g_source_unref(timeout_source);
+								}
+								else{
+									JANUS_LOG(LOG_ERR, "np - Don't have memory to alloc! ...\n");
+								}
 							}
 						} else if(cur_seq->state == SEQ_NACKED  && now - cur_seq->ts > SEQ_NACKED_WAIT) {
 							JANUS_LOG(LOG_HUGE, "[%"SCNu64"] Missed sequence number %"SCNu16" (%s stream #%d), sending 2nd NACK\n",
@@ -2896,34 +2932,44 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 							retransmits_cnt++;
 							/* Enqueue it */
 							janus_ice_queued_packet *pkt = g_malloc(sizeof(janus_ice_queued_packet));
-							pkt->data = g_malloc(p->length+SRTP_MAX_TAG_LEN);
-							memcpy(pkt->data, p->data, p->length);
-							pkt->length = p->length;
-							pkt->type = video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
-							pkt->control = FALSE;
-							pkt->retransmission = TRUE;
-							pkt->label = NULL;
-							pkt->added = janus_get_monotonic_time();
-							/* What to send and how depends on whether we're doing RFC4588 or not */
-							if(!video || !janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_RFC4588_RTX)) {
-								/* We're not: just clarify the packet was already encrypted before */
-								pkt->encrypted = TRUE;
-							} else {
-								/* We are: overwrite the RTP header (which means we'll need a new SRTP encrypt) */
-								pkt->encrypted = FALSE;
-								janus_rtp_header *header = (janus_rtp_header *)pkt->data;
-								header->type = stream->video_rtx_payload_type;
-								header->ssrc = htonl(stream->video_ssrc_rtx);
-								component->rtx_seq_number++;
-								header->seq_number = htons(component->rtx_seq_number);
-							}
-							if(handle->queued_packets != NULL) {
+							if(pkt){
+								pkt->data = g_malloc(p->length+SRTP_MAX_TAG_LEN);
+								if(pkt->data){
+									memcpy(pkt->data, p->data, p->length);
+								}
+								else{
+									JANUS_LOG(LOG_ERR, "pkt->data - Don't have memory to alloc! ...\n");
+								}
+								pkt->length = p->length;
+								pkt->type = video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
+								pkt->control = FALSE;
+								pkt->retransmission = TRUE;
+								pkt->label = NULL;
+								pkt->added = janus_get_monotonic_time();
+								/* What to send and how depends on whether we're doing RFC4588 or not */
+								if(!video || !janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_RFC4588_RTX)) {
+									/* We're not: just clarify the packet was already encrypted before */
+									pkt->encrypted = TRUE;
+								} else {
+									/* We are: overwrite the RTP header (which means we'll need a new SRTP encrypt) */
+									pkt->encrypted = FALSE;
+									janus_rtp_header *header = (janus_rtp_header *)pkt->data;
+									header->type = stream->video_rtx_payload_type;
+									header->ssrc = htonl(stream->video_ssrc_rtx);
+									component->rtx_seq_number++;
+									header->seq_number = htons(component->rtx_seq_number);
+								}
+								if(handle->queued_packets != NULL) {
 #if GLIB_CHECK_VERSION(2, 46, 0)
-								g_async_queue_push_front(handle->queued_packets, pkt);
+									g_async_queue_push_front(handle->queued_packets, pkt);
 #else
-								g_async_queue_push(handle->queued_packets, pkt);
+									g_async_queue_push(handle->queued_packets, pkt);
 #endif
-								g_main_context_wakeup(handle->mainctx);
+									g_main_context_wakeup(handle->mainctx);
+								}
+							}
+							else{
+								JANUS_LOG(LOG_ERR, "pkt - Don't have memory to alloc! ...\n");
 							}
 						}
 						if(rtcp_ctx != NULL && in_rb) {
@@ -3460,31 +3506,46 @@ int janus_ice_setup_local(janus_ice_handle *handle, int offer, int audio, int vi
 		nice_agent_set_stream_tos(handle->agent, handle->stream_id, dscp_tos);
 	}
 	janus_ice_stream *stream = g_malloc0(sizeof(janus_ice_stream));
-	janus_refcount_init(&stream->ref, janus_ice_stream_free);
-	janus_refcount_increase(&handle->ref);
-	stream->stream_id = handle->stream_id;
-	stream->handle = handle;
-	stream->audio_payload_type = -1;
-	stream->video_payload_type = -1;
-	stream->video_rtx_payload_type = -1;
-	stream->nack_queue_ms = min_nack_queue;
-	/* FIXME By default, if we're being called we're DTLS clients, but this may be changed by ICE... */
-	stream->dtls_role = offer ? JANUS_DTLS_ROLE_CLIENT : JANUS_DTLS_ROLE_ACTPASS;
-	if(audio) {
-		stream->audio_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
-		stream->audio_rtcp_ctx = g_malloc0(sizeof(janus_rtcp_context));
-		stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
-	}
-	if(video) {
-		stream->video_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
-		if(janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_RFC4588_RTX)) {
-			/* Create an SSRC for RFC4588 as well */
-			stream->video_ssrc_rtx = janus_random_uint32();	/* FIXME Should we look for conflicts? */
+	if(stream){
+		janus_refcount_init(&stream->ref, janus_ice_stream_free);
+		janus_refcount_increase(&handle->ref);
+		stream->stream_id = handle->stream_id;
+		stream->handle = handle;
+		stream->audio_payload_type = -1;
+		stream->video_payload_type = -1;
+		stream->video_rtx_payload_type = -1;
+		stream->nack_queue_ms = min_nack_queue;
+		/* FIXME By default, if we're being called we're DTLS clients, but this may be changed by ICE... */
+		stream->dtls_role = offer ? JANUS_DTLS_ROLE_CLIENT : JANUS_DTLS_ROLE_ACTPASS;
+		if(audio) {
+			stream->audio_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
+			stream->audio_rtcp_ctx = g_malloc0(sizeof(janus_rtcp_context));
+			if(stream->audio_rtcp_ctx){
+				stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
+			}
+			else{
+				JANUS_LOG(LOG_ERR, "stream->audio_rtcp_ctx - Don't have memory to alloc! ...\n");
+			}
 		}
-		stream->video_rtcp_ctx[0] = g_malloc0(sizeof(janus_rtcp_context));
-		stream->video_rtcp_ctx[0]->tb = 90000;
+		if(video) {
+			stream->video_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
+			if(janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_RFC4588_RTX)) {
+				/* Create an SSRC for RFC4588 as well */
+				stream->video_ssrc_rtx = janus_random_uint32();	/* FIXME Should we look for conflicts? */
+			}
+			stream->video_rtcp_ctx[0] = g_malloc0(sizeof(janus_rtcp_context));
+			if(stream->video_rtcp_ctx[0]){
+				stream->video_rtcp_ctx[0]->tb = 90000;
+			}
+			else{
+				JANUS_LOG(LOG_ERR, "stream->video_rtcp_ctx[0] - Don't have memory to alloc! ...\n");
+			}
+		}
+		janus_mutex_init(&stream->mutex);
 	}
-	janus_mutex_init(&stream->mutex);
+	else{
+		JANUS_LOG(LOG_ERR, "stream - Don't have memory to alloc! ...\n");
+	}
 	if(!have_turnrest_credentials) {
 		/* No TURN REST API server and credentials, any static ones? */
 		if(janus_turn_server != NULL) {
@@ -3516,13 +3577,18 @@ int janus_ice_setup_local(janus_ice_handle *handle, int offer, int audio, int vi
 	}
 	handle->stream = stream;
 	janus_ice_component *component = g_malloc0(sizeof(janus_ice_component));
-	janus_refcount_init(&component->ref, janus_ice_component_free);
-	component->stream = stream;
-	janus_refcount_increase(&stream->ref);
-	component->stream_id = stream->stream_id;
-	component->component_id = 1;
-	janus_mutex_init(&component->mutex);
-	stream->component = component;
+	if(component){
+		janus_refcount_init(&component->ref, janus_ice_component_free);
+		component->stream = stream;
+		janus_refcount_increase(&stream->ref);
+		component->stream_id = stream->stream_id;
+		component->component_id = 1;
+		janus_mutex_init(&component->mutex);
+		stream->component = component;
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "component - Don't have memory to alloc! ...\n");
+	}
 #ifdef HAVE_PORTRANGE
 	/* FIXME: libnice supports this since 0.1.0, but the 0.1.3 on Fedora fails with an undefined reference! */
 	nice_agent_set_port_range(handle->agent, handle->stream_id, 1, rtp_range_min, rtp_range_max);
@@ -3639,11 +3705,16 @@ static gboolean janus_ice_outgoing_transport_wide_cc_feedback(gpointer user_data
 				for(i = stream->transport_wide_cc_last_feedback_seq_num+1; i<transport_seq_num; ++i) {
 					/* Create new stat */
 					janus_rtcp_transport_wide_cc_stats *missing = g_malloc(sizeof(janus_rtcp_transport_wide_cc_stats));
-					/* Add missing packet */
-					missing->transport_seq_num = i;
-					missing->timestamp = 0;
-					/* Add it */
-					g_queue_push_tail(packets, missing);
+					if(missing){
+						/* Add missing packet */
+						missing->transport_seq_num = i;
+						missing->timestamp = 0;
+						/* Add it */
+						g_queue_push_tail(packets, missing);
+					}
+					else{
+						JANUS_LOG(LOG_ERR, "missing - Don't have memory to alloc! ...\n");
+					}
 				}
 			}
 			/* Store last */
@@ -4148,28 +4219,34 @@ static gboolean janus_ice_outgoing_traffic_handle(janus_ice_handle *handle, janu
 				/* There's a REMB, prepend a RR as it won't work otherwise */
 				int rrlen = 8;
 				char *rtcpbuf = g_malloc0(rrlen+pkt->length+SRTP_MAX_TAG_LEN+4);
-				rtcp_rr *rr = (rtcp_rr *)rtcpbuf;
-				rr->header.version = 2;
-				rr->header.type = RTCP_RR;
-				rr->header.rc = 0;
-				rr->header.length = htons((rrlen/4)-1);
-				janus_ice_stream *stream = handle->stream;
-				/* Append REMB */
-				memcpy(rtcpbuf+rrlen, pkt->data, pkt->length);
-				/* If we're simulcasting, set the extra SSRCs (the first one will be set by janus_rtcp_fix_ssrc) */
-				if(stream->video_ssrc_peer[1] && pkt->length >= 28) {
-					rtcp_fb *rtcpfb = (rtcp_fb *)(rtcpbuf+rrlen);
-					rtcp_remb *remb = (rtcp_remb *)rtcpfb->fci;
-					remb->ssrc[1] = htonl(stream->video_ssrc_peer[1]);
-					if(stream->video_ssrc_peer[2] && pkt->length >= 32) {
-						remb->ssrc[2] = htonl(stream->video_ssrc_peer[2]);
+				if(rtcpbuf){
+					rtcp_rr *rr = (rtcp_rr *)rtcpbuf;
+					rr->header.version = 2;
+					rr->header.type = RTCP_RR;
+					rr->header.rc = 0;
+					rr->header.length = htons((rrlen/4)-1);
+					janus_ice_stream *stream = handle->stream;
+					/* Append REMB */
+					memcpy(rtcpbuf+rrlen, pkt->data, pkt->length);
+					/* If we're simulcasting, set the extra SSRCs (the first one will be set by janus_rtcp_fix_ssrc) */
+					if(stream->video_ssrc_peer[1] && pkt->length >= 28) {
+						rtcp_fb *rtcpfb = (rtcp_fb *)(rtcpbuf+rrlen);
+						rtcp_remb *remb = (rtcp_remb *)rtcpfb->fci;
+						remb->ssrc[1] = htonl(stream->video_ssrc_peer[1]);
+						if(stream->video_ssrc_peer[2] && pkt->length >= 32) {
+							remb->ssrc[2] = htonl(stream->video_ssrc_peer[2]);
+						}
 					}
+							
+					/* Free old packet and update */
+					char *prev_data = pkt->data;
+					pkt->data = rtcpbuf;
+					pkt->length = rrlen+pkt->length;
+					g_clear_pointer(&prev_data, g_free);
 				}
-				/* Free old packet and update */
-				char *prev_data = pkt->data;
-				pkt->data = rtcpbuf;
-				pkt->length = rrlen+pkt->length;
-				g_clear_pointer(&prev_data, g_free);
+				else{
+					JANUS_LOG(LOG_ERR, "rtcpbuf - Don't have memory to alloc! ...\n");
+				}
 			}
 			/* Do we need to dump this packet for debugging? */
 			if(g_atomic_int_get(&handle->dump_packets))
@@ -4288,24 +4365,34 @@ static gboolean janus_ice_outgoing_traffic_handle(janus_ice_handle *handle, janu
 					p = g_malloc(sizeof(janus_rtp_packet));
 					janus_rtp_header *header = (janus_rtp_header *)pkt->data;
 					guint16 original_seq = header->seq_number;
-					p->data = g_malloc(pkt->length+2);
-					p->length = pkt->length+2;
-					/* Check where the payload starts */
-					int plen = 0;
-					char *payload = janus_rtp_payload(pkt->data, pkt->length, &plen);
-					if(plen == 0) {
-						JANUS_LOG(LOG_WARN, "[%"SCNu64"] Discarding outgoing empty RTP packet\n", handle->handle_id);
-						janus_ice_free_rtp_packet(p);
-						janus_ice_free_queued_packet(pkt);
-						return G_SOURCE_CONTINUE;
+					if(p){
+						p->data = g_malloc(pkt->length+2);
+						if(p->data){
+							p->length = pkt->length+2;
+							/* Check where the payload starts */
+							int plen = 0;
+							char *payload = janus_rtp_payload(pkt->data, pkt->length, &plen);
+							if(plen == 0) {
+								JANUS_LOG(LOG_WARN, "[%"SCNu64"] Discarding outgoing empty RTP packet\n", handle->handle_id);
+								janus_ice_free_rtp_packet(p);
+								janus_ice_free_queued_packet(pkt);
+								return G_SOURCE_CONTINUE;
+							}
+							size_t hsize = payload - pkt->data;
+							/* Copy the header first */
+							memcpy(p->data, pkt->data, hsize);
+							/* Copy the original sequence number */
+							memcpy(p->data+hsize, &original_seq, 2);
+							/* Copy the payload */
+							memcpy(p->data+hsize+2, payload, pkt->length - hsize);
+						}
+						else{
+							JANUS_LOG(LOG_ERR, "p->data - Don't have memory to alloc! ...\n");
+						}
 					}
-					size_t hsize = payload - pkt->data;
-					/* Copy the header first */
-					memcpy(p->data, pkt->data, hsize);
-					/* Copy the original sequence number */
-					memcpy(p->data+hsize, &original_seq, 2);
-					/* Copy the payload */
-					memcpy(p->data+hsize+2, payload, pkt->length - hsize);
+					else{
+						JANUS_LOG(LOG_ERR, "p - Don't have memory to alloc! ...\n");
+					}
 				}
 				/* Encrypt SRTP */
 				int protected = pkt->length;
@@ -4405,9 +4492,19 @@ static gboolean janus_ice_outgoing_traffic_handle(janus_ice_handle *handle, janu
 						if(p == NULL) {
 							/* If we're not doing RFC4588, we're saving the SRTP packet as it is */
 							p = g_malloc(sizeof(janus_rtp_packet));
-							p->data = g_malloc(protected);
-							memcpy(p->data, pkt->data, protected);
-							p->length = protected;
+							if(p){
+								p->data = g_malloc(protected);
+								if(p->data){
+									memcpy(p->data, pkt->data, protected);
+									p->length = protected;
+								}
+								else{
+									JANUS_LOG(LOG_ERR, "p->data 2 - Don't have memory to alloc! ...\n");
+								}
+							}
+							else{
+								JANUS_LOG(LOG_ERR, "p 2 - Don't have memory to alloc! ...\n");
+							}
 						}
 						p->created = janus_get_monotonic_time();
 						p->last_retransmit = 0;
@@ -4588,25 +4685,35 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, janus_plugin_rtp *packet) {
 	}
 	/* Queue this packet */
 	janus_ice_queued_packet *pkt = g_malloc(sizeof(janus_ice_queued_packet));
-	pkt->data = g_malloc(totlen + SRTP_MAX_TAG_LEN);
-	/* RTP header first */
-	memcpy(pkt->data, packet->buffer, RTP_HEADER_SIZE);
-	/* Then RTP extensions, if any */
-	if(extlen > 0)
-		memcpy(pkt->data + RTP_HEADER_SIZE, extensions, extlen);
-	/* Finally the RTP payload, if available */
-	if(payload != NULL && plen > 0)
-		memcpy(pkt->data + RTP_HEADER_SIZE + extlen, payload, plen);
-	pkt->length = totlen;
-	pkt->type = packet->video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
-	pkt->control = FALSE;
-	pkt->encrypted = FALSE;
-	pkt->retransmission = FALSE;
-	pkt->label = NULL;
-	pkt->added = janus_get_monotonic_time();
-	janus_ice_queue_packet(handle, pkt);
-	/* Restore the extension flag to what the plugin set it to */
-	header->extension = origext;
+	if(pkt){
+		pkt->data = g_malloc(totlen + SRTP_MAX_TAG_LEN);
+		if(pkt->data){
+			/* RTP header first */
+			memcpy(pkt->data, packet->buffer, RTP_HEADER_SIZE);
+			/* Then RTP extensions, if any */
+			if(extlen > 0)
+				memcpy(pkt->data + RTP_HEADER_SIZE, extensions, extlen);
+				/* Finally the RTP payload, if available */
+			if(payload != NULL && plen > 0)
+				memcpy(pkt->data + RTP_HEADER_SIZE + extlen, payload, plen);
+		}
+		else{
+			JANUS_LOG(LOG_ERR, "pkt->data - Don't have memory to alloc! ...\n");
+		}
+		pkt->length = totlen;
+		pkt->type = packet->video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
+		pkt->control = FALSE;
+		pkt->encrypted = FALSE;
+		pkt->retransmission = FALSE;
+		pkt->label = NULL;
+		pkt->added = janus_get_monotonic_time();
+		janus_ice_queue_packet(handle, pkt);
+		/* Restore the extension flag to what the plugin set it to */
+		header->extension = origext;
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "pkt - Don't have memory to alloc! ...\n");
+	}
 }
 
 void janus_ice_relay_rtcp_internal(janus_ice_handle *handle, janus_plugin_rtcp *packet, gboolean filter_rtcp) {
@@ -4638,16 +4745,26 @@ void janus_ice_relay_rtcp_internal(janus_ice_handle *handle, janus_plugin_rtcp *
 	}
 	/* Queue this packet */
 	janus_ice_queued_packet *pkt = g_malloc(sizeof(janus_ice_queued_packet));
-	pkt->data = g_malloc(rtcp_len+SRTP_MAX_TAG_LEN+4);
-	memcpy(pkt->data, rtcp_buf, rtcp_len);
-	pkt->length = rtcp_len;
-	pkt->type = packet->video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
-	pkt->control = TRUE;
-	pkt->encrypted = FALSE;
-	pkt->retransmission = FALSE;
-	pkt->label = NULL;
-	pkt->added = janus_get_monotonic_time();
-	janus_ice_queue_packet(handle, pkt);
+	if(pkt){
+		pkt->data = g_malloc(rtcp_len+SRTP_MAX_TAG_LEN+4);
+		if(pkt->data){
+			memcpy(pkt->data, rtcp_buf, rtcp_len);
+		}
+		else{
+			JANUS_LOG(LOG_ERR, "pkt->data 3 - Don't have memory to alloc! ...\n");
+		}
+		pkt->length = rtcp_len;
+		pkt->type = packet->video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
+		pkt->control = TRUE;
+		pkt->encrypted = FALSE;
+		pkt->retransmission = FALSE;
+		pkt->label = NULL;
+		pkt->added = janus_get_monotonic_time();
+		janus_ice_queue_packet(handle, pkt);
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "pkt 3 - Don't have memory to alloc! ...\n");
+	}
 	if(rtcp_buf != packet->buffer) {
 		/* We filtered the original packet, deallocate it */
 		g_free(rtcp_buf);
@@ -4703,16 +4820,26 @@ void janus_ice_relay_data(janus_ice_handle *handle, janus_plugin_data *packet) {
 		return;
 	/* Queue this packet */
 	janus_ice_queued_packet *pkt = g_malloc(sizeof(janus_ice_queued_packet));
-	pkt->data = g_malloc(packet->length);
-	memcpy(pkt->data, packet->buffer, packet->length);
-	pkt->length = packet->length;
-	pkt->type = packet->binary ? JANUS_ICE_PACKET_BINARY : JANUS_ICE_PACKET_TEXT;
-	pkt->control = FALSE;
-	pkt->encrypted = FALSE;
-	pkt->retransmission = FALSE;
-	pkt->label = packet->label ? g_strdup(packet->label) : NULL;
-	pkt->added = janus_get_monotonic_time();
-	janus_ice_queue_packet(handle, pkt);
+	if(pkt){
+		pkt->data = g_malloc(packet->length);
+		if(pkt->data){
+			memcpy(pkt->data, packet->buffer, packet->length);
+		}
+		else{
+			JANUS_LOG(LOG_ERR, "pkt->data 4 - Don't have memory to alloc! ...\n");
+		}
+		pkt->length = packet->length;
+		pkt->type = packet->binary ? JANUS_ICE_PACKET_BINARY : JANUS_ICE_PACKET_TEXT;
+		pkt->control = FALSE;
+		pkt->encrypted = FALSE;
+		pkt->retransmission = FALSE;
+		pkt->label = packet->label ? g_strdup(packet->label) : NULL;
+		pkt->added = janus_get_monotonic_time();
+		janus_ice_queue_packet(handle, pkt);
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "pkt 4 - Don't have memory to alloc! ...\n");
+	}
 }
 #endif
 
@@ -4722,16 +4849,26 @@ void janus_ice_relay_sctp(janus_ice_handle *handle, char *buffer, int length) {
 		return;
 	/* Queue this packet */
 	janus_ice_queued_packet *pkt = g_malloc(sizeof(janus_ice_queued_packet));
-	pkt->data = g_malloc(length);
-	memcpy(pkt->data, buffer, length);
-	pkt->length = length;
-	pkt->type = JANUS_ICE_PACKET_SCTP;
-	pkt->control = FALSE;
-	pkt->encrypted = FALSE;
-	pkt->retransmission = FALSE;
-	pkt->label = NULL;
-	pkt->added = janus_get_monotonic_time();
-	janus_ice_queue_packet(handle, pkt);
+	if(pkt){
+		pkt->data = g_malloc(length);
+		if(pkt->data){
+			memcpy(pkt->data, buffer, length);
+		}
+		else{
+			JANUS_LOG(LOG_ERR, "pkt->data 5 - Don't have memory to alloc! ...\n");
+		}
+		pkt->length = length;
+		pkt->type = JANUS_ICE_PACKET_SCTP;
+		pkt->control = FALSE;
+		pkt->encrypted = FALSE;
+		pkt->retransmission = FALSE;
+		pkt->label = NULL;
+		pkt->added = janus_get_monotonic_time();
+		janus_ice_queue_packet(handle, pkt);
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "pkt 5 - Don't have memory to alloc! ...\n");
+	}
 #endif
 }
 
