@@ -159,7 +159,13 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 					stream->audio_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
 					if(stream->audio_rtcp_ctx == NULL) {
 						stream->audio_rtcp_ctx = g_malloc0(sizeof(rtcp_context));
-						stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
+						if( stream->audio_rtpc_ctx ){
+							stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
+						}
+						else{
+							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Audio - Don't have memory to alloc ...\n", handle->handle_id);
+							return -2;
+						}
 					}
 				}
 				switch(m->direction) {
@@ -209,7 +215,13 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 					stream->video_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
 					if(stream->video_rtcp_ctx[0] == NULL) {
 						stream->video_rtcp_ctx[0] = g_malloc0(sizeof(rtcp_context));
-						stream->video_rtcp_ctx[0]->tb = 90000;	/* May change later */
+						if(stream->video_rtcp_ctx[0]){
+							stream->video_rtcp_ctx[0]->tb = 90000;	/* May change later */
+						}
+						else{
+							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Video - Don't have memory to alloc ...\n", handle->handle_id );
+							return -2;
+						}
 					}
 				}
 				switch(m->direction) {
@@ -613,11 +625,23 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 			}
 			if(stream->video_ssrc_peer[1] && stream->video_rtcp_ctx[1] == NULL) {
 				stream->video_rtcp_ctx[1] = g_malloc0(sizeof(rtcp_context));
-				stream->video_rtcp_ctx[1]->tb = 90000;
+				if(stream->video_rtcp_ctx[1]){
+					stream->video_rtcp_ctx[1]->tb = 90000;
+				}
+				else{
+					JANUS_LOG(LOG_ERR, "[%"SCNu64"] Video 1 - Don't have memory to alloc ...\n", handle->handle_id);
+					return -2;
+				}
 			}
 			if(stream->video_ssrc_peer[2] && stream->video_rtcp_ctx[2] == NULL) {
 				stream->video_rtcp_ctx[2] = g_malloc0(sizeof(rtcp_context));
-				stream->video_rtcp_ctx[2]->tb = 90000;
+				if(stream->video_rtcp_ctx[2]){
+					stream->video_rtcp_ctx[2]->tb = 90000;
+				}
+				else{
+					JANUS_LOG(LOG_ERR, "[%"SCNu64"] Video 2 - Don't have memory to alloc ...\n", handle->handle_id);
+					return -2;
+				}
 			}
 		}
 		temp = temp->next;
@@ -723,6 +747,10 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 			JANUS_LOG(LOG_VERB, "[%"SCNu64"] Resolving mDNS address (%s) asynchronously\n",
 				handle->handle_id, rip);
 			janus_sdp_mdns_candidate *mc = g_malloc(sizeof(janus_sdp_mdns_candidate));
+			if(!mc){
+				JANUS_LOG(LOG_ERR, "[%"SCNu64"] Don't have memory to alloc... (%d)\n", handle->handle_id, res);
+				return -2;
+			}
 			janus_refcount_increase(&handle->ref);
 			mc->handle = handle;
 			mc->candidate = g_strdup(candidate);
