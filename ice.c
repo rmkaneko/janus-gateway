@@ -164,7 +164,7 @@ void janus_ice_set_static_event_loops(int loops) {
 			loop->thread = g_thread_try_new(tname, &janus_ice_static_event_loop_thread, loop, &error);
 		}
 		else{
-			error = -1;
+			error = 999;
 			JANUS_LOG(LOG_ERR, "Don't have memory to alloc! ...\n");
 		}
 		if(error != NULL) {
