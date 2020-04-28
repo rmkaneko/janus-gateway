@@ -159,7 +159,7 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 					stream->audio_ssrc = janus_random_uint32();	/* FIXME Should we look for conflicts? */
 					if(stream->audio_rtcp_ctx == NULL) {
 						stream->audio_rtcp_ctx = g_malloc0(sizeof(rtcp_context));
-						if( stream->audio_rtpc_ctx ){
+						if( stream->audio_rtcp_ctx ){
 							stream->audio_rtcp_ctx->tb = 48000;	/* May change later */
 						}
 						else{
