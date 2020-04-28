@@ -110,6 +110,10 @@ static void janus_sdp_attribute_free(const janus_refcount *attr_ref) {
 /* SDP and m-lines/attributes code */
 janus_sdp_mline *janus_sdp_mline_create(janus_sdp_mtype type, guint16 port, const char *proto, janus_sdp_mdirection direction) {
 	janus_sdp_mline *m = g_malloc0(sizeof(janus_sdp_mline));
+	if(!m){
+		JANUS_LOG(LOG_ERR, "janus_sdp_mline - Don't have memory to alloc! ...\n");
+		return 0;
+	}
 	g_atomic_int_set(&m->destroyed, 0);
 	janus_refcount_init(&m->ref, janus_sdp_mline_free);
 	m->type = type;
@@ -160,6 +164,10 @@ janus_sdp_attribute *janus_sdp_attribute_create(const char *name, const char *va
 	if(!name)
 		return NULL;
 	janus_sdp_attribute *a = g_malloc(sizeof(janus_sdp_attribute));
+	if(!a){
+		JANUS_LOG(LOG_ERR, "janus_sdp_attribute - Don't have memory to alloc! ...\n");
+		return 0;
+	}
 	g_atomic_int_set(&a->destroyed, 0);
 	janus_refcount_init(&a->ref, janus_sdp_attribute_free);
 	a->name = g_strdup(name);
@@ -251,11 +259,16 @@ janus_sdp *janus_sdp_parse(const char *sdp, char *error, size_t errlen) {
 		return NULL;
 	}
 	janus_sdp *imported = g_malloc0(sizeof(janus_sdp));
-	g_atomic_int_set(&imported->destroyed, 0);
-	janus_refcount_init(&imported->ref, janus_sdp_free);
-	imported->o_ipv4 = TRUE;
-	imported->c_ipv4 = TRUE;
-
+	if(imported){
+		g_atomic_int_set(&imported->destroyed, 0);
+		janus_refcount_init(&imported->ref, janus_sdp_free);
+		imported->o_ipv4 = TRUE;
+		imported->c_ipv4 = TRUE;
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "janus_sdp - Don't have memory to alloc! ...\n");
+	}
+	
 	gboolean success = TRUE;
 	janus_sdp_mline *mline = NULL;
 
@@ -375,6 +388,10 @@ janus_sdp *janus_sdp_parse(const char *sdp, char *error, size_t errlen) {
 					}
 					case 'a': {
 						janus_sdp_attribute *a = g_malloc0(sizeof(janus_sdp_attribute));
+						if(!a){
+							JANUS_LOG(LOG_ERR, "janus_sdp_attibute a - Don't have memory to alloc! ...\n");
+							break;
+						}
 						janus_refcount_init(&a->ref, janus_sdp_attribute_free);
 						line += 2;
 						char *semicolon = strchr(line, ':');
@@ -406,6 +423,10 @@ janus_sdp *janus_sdp_parse(const char *sdp, char *error, size_t errlen) {
 					}
 					case 'm': {
 						janus_sdp_mline *m = g_malloc0(sizeof(janus_sdp_mline));
+						if(!m){
+							JANUS_LOG(LOG_ERR, "janus_sdp_attribute m - Don't have memory to alloc! ...\n");
+							break;
+						}
 						g_atomic_int_set(&m->destroyed, 0);
 						janus_refcount_init(&m->ref, janus_sdp_mline_free);
 						/* Start with media type, port and protocol */
@@ -534,6 +555,10 @@ janus_sdp *janus_sdp_parse(const char *sdp, char *error, size_t errlen) {
 					}
 					case 'a': {
 						janus_sdp_attribute *a = g_malloc0(sizeof(janus_sdp_attribute));
+						if(!a){
+							JANUS_LOG(LOG_ERR, "janus_sdp_attribute a - Don't have memory to alloc! ...\n");
+							break;
+						}
 						janus_refcount_init(&a->ref, janus_sdp_attribute_free);
 						line += 2;
 						char *semicolon = strchr(line, ':');
@@ -991,6 +1016,10 @@ const char *janus_sdp_match_preferred_codec(janus_sdp_mtype type, char *codec) {
 
 janus_sdp *janus_sdp_new(const char *name, const char *address) {
 	janus_sdp *sdp = g_malloc(sizeof(janus_sdp));
+	if(!sdp){
+		JANUS_LOG(LOG_ERR, "janus_sdp_new - Don't have memory to alloc! ...\n");
+		return 0;
+	}
 	g_atomic_int_set(&sdp->destroyed, 0);
 	janus_refcount_init(&sdp->ref, janus_sdp_free);
 	/* Fill in some predefined stuff */
@@ -1303,23 +1332,27 @@ janus_sdp *janus_sdp_generate_answer(janus_sdp *offer, ...) {
 #endif
 
 	janus_sdp *answer = g_malloc(sizeof(janus_sdp));
-	g_atomic_int_set(&answer->destroyed, 0);
-	janus_refcount_init(&answer->ref, janus_sdp_free);
-	/* Start by copying some of the headers */
-	answer->version = offer->version;
-	answer->o_name = g_strdup(offer->o_name ? offer->o_name : "-");
-	answer->o_sessid = offer->o_sessid;
-	answer->o_version = offer->o_version;
-	answer->o_ipv4 = offer->o_ipv4;
-	answer->o_addr = g_strdup(offer->o_addr ? offer->o_addr : "127.0.0.1");
-	answer->s_name = g_strdup(offer->s_name ? offer->s_name : "Janus session");
-	answer->t_start = 0;
-	answer->t_stop = 0;
-	answer->c_ipv4 = offer->c_ipv4;
-	answer->c_addr = g_strdup(offer->c_addr ? offer->c_addr : "127.0.0.1");
-	answer->attributes = NULL;
-	answer->m_lines = NULL;
-
+	if(answer){
+		g_atomic_int_set(&answer->destroyed, 0);
+		janus_refcount_init(&answer->ref, janus_sdp_free);
+		/* Start by copying some of the headers */
+		answer->version = offer->version;
+		answer->o_name = g_strdup(offer->o_name ? offer->o_name : "-");
+		answer->o_sessid = offer->o_sessid;
+		answer->o_version = offer->o_version;
+		answer->o_ipv4 = offer->o_ipv4;
+		answer->o_addr = g_strdup(offer->o_addr ? offer->o_addr : "127.0.0.1");
+		answer->s_name = g_strdup(offer->s_name ? offer->s_name : "Janus session");
+		answer->t_start = 0;
+		answer->t_stop = 0;
+		answer->c_ipv4 = offer->c_ipv4;
+		answer->c_addr = g_strdup(offer->c_addr ? offer->c_addr : "127.0.0.1");
+		answer->attributes = NULL;
+		answer->m_lines = NULL;
+	}
+	else{
+		JANUS_LOG(LOG_ERR, "janus_sdp answer - Don't have memory to alloc! ...\n");
+	}
 	/* Now iterate on all media, and let's see what we should do */
 	int audio = 0, video = 0, data = 0;
 	GList *temp = offer->m_lines;
@@ -1327,17 +1360,22 @@ janus_sdp *janus_sdp_generate_answer(janus_sdp *offer, ...) {
 		janus_sdp_mline *m = (janus_sdp_mline *)temp->data;
 		/* For each m-line we parse, we'll need a corresponding one in the answer */
 		janus_sdp_mline *am = g_malloc0(sizeof(janus_sdp_mline));
-		g_atomic_int_set(&am->destroyed, 0);
-		janus_refcount_init(&am->ref, janus_sdp_mline_free);
-		am->type = m->type;
-		am->type_str = m->type_str ? g_strdup(m->type_str) : NULL;
-		am->proto = g_strdup(m->proto ? m->proto : "UDP/TLS/RTP/SAVPF");
-		am->port = m->port;
-		am->c_ipv4 = m->c_ipv4;
-		am->c_addr = g_strdup(am->c_addr ? am->c_addr : "127.0.0.1");
-		am->direction = JANUS_SDP_INACTIVE;	/* We'll change this later */
-		/* Append to the list of m-lines in the answer */
-		answer->m_lines = g_list_append(answer->m_lines, am);
+		if(am){
+			g_atomic_int_set(&am->destroyed, 0);
+			janus_refcount_init(&am->ref, janus_sdp_mline_free);
+			am->type = m->type;
+			am->type_str = m->type_str ? g_strdup(m->type_str) : NULL;
+			am->proto = g_strdup(m->proto ? m->proto : "UDP/TLS/RTP/SAVPF");
+			am->port = m->port;
+			am->c_ipv4 = m->c_ipv4;
+			am->c_addr = g_strdup(am->c_addr ? am->c_addr : "127.0.0.1");
+			am->direction = JANUS_SDP_INACTIVE;	/* We'll change this later */
+			/* Append to the list of m-lines in the answer */
+			answer->m_lines = g_list_append(answer->m_lines, am);
+		}
+		else{
+			JANUS_LOG(LOG_ERR, "janus_sdp_mline - Don't have memory to alloc! ...\n");
+		}
 		/* Let's see what this is */
 		if(m->type == JANUS_SDP_AUDIO) {
 			if(m->port > 0) {
